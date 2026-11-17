@@ -1,12 +1,17 @@
-﻿using AgenteDecisao.API.Services.Interfaces;
+using AgenteDecisao.API.Services.Interfaces;
 using System.Text.Json;
 
 namespace AgenteDecisao.API.Services;
 
 public class ServicoOpenIA(HttpClient httpClient) : IServicoIA
 {
-    public async Task<string> ExecutarAsync(string prompt)
+    public async Task<string> ExecutarAsync(string prompt, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            throw new ArgumentException("O prompt não pode ser vazio.", nameof(prompt));
+        }
+
         var requisicao = new
         {
             model = "gpt-4o",
@@ -16,13 +21,30 @@ public class ServicoOpenIA(HttpClient httpClient) : IServicoIA
             }
         };
 
-        var resposta = await httpClient.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", requisicao);
-        var json = await resposta.Content.ReadFromJsonAsync<JsonElement>();
-        //Retornar o texto da resposta
-        return json
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString()!;
+        var resposta = await httpClient.PostAsJsonAsync(
+            "https://api.openai.com/v1/chat/completions",
+            requisicao,
+            cancellationToken);
+
+        resposta.EnsureSuccessStatusCode();
+
+        var json = await resposta.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+
+        if (!json.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
+        {
+            throw new InvalidOperationException("Resposta da OpenAI não contém escolhas válidas.");
+        }
+
+        var content = choices[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            throw new InvalidOperationException("Resposta da OpenAI não contém conteúdo textual válido.");
+        }
+
+        return content;
     }
 }
