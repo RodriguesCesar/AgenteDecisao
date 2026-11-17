@@ -1,18 +1,17 @@
-﻿using AgenteDecisao.API.Models;
-using AgenteDecisao.API.Services;
+using AgenteDecisao.API.Models;
 using AgenteDecisao.API.Services.Interfaces;
 using AgenteDecisao.API.Tools.Intarfaces;
+
 namespace AgenteDecisao.API.Agents;
 
 public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFerramentaAgente> ferramentas)
 {
-
     /// <summary>
-    /// Método principal para processar o contexto de decisão 
-    /// e tomar ações apropriadas com base nas informações 
+    /// Método principal para processar o contexto de decisão
+    /// e tomar ações apropriadas com base nas informações
     /// de inadimplência do cliente.
     /// </summary>
-    private string ConstruirPrompt(ContextoDecisao contexto)
+    private static string ConstruirPrompt(ContextoDecisao contexto)
     {
         return $@"
                 Você é um agente decisor corporativo.
@@ -22,10 +21,10 @@ public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFer
                 - Suspender entre 60 e 120 dias
                 - Cancelar acima de 120 dias
 
-                Cliente: {contexto?.Cliente?.Nome}
-                Dias em atraso: {contexto?.Cliente?.DiasInadimplente}
-                Status atual: {contexto?.Assinatura?.Status}
-                Contexto do cliente : {contexto?.EntradaUsuario}
+                Cliente: {contexto.Cliente?.Nome}
+                Dias em atraso: {contexto.Cliente?.DiasInadimplente}
+                Status atual: {contexto.Assinatura?.Status}
+                Contexto do cliente : {contexto.EntradaUsuario}
                 Responda apenas JSON válido:
                 {{
                   ""decisao"": ""SUSPENDER | CANCELAR | MANTER"",
@@ -39,22 +38,31 @@ public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFer
                 Apenas retorne o objeto JSON.
             ";
     }
-    public async Task<ResultadoDecisao?> ExecutarAsync(ContextoDecisao contexto)
+
+    public async Task<ResultadoDecisao> ExecutarAsync(ContextoDecisao contexto, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(contexto);
+
         var prompt = ConstruirPrompt(contexto);
-        var resposta = await servicoIA.ExecutarAsync(prompt);
+        var resposta = await servicoIA.ExecutarAsync(prompt, cancellationToken);
+
         var options = new System.Text.Json.JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
         };
-        var resultado = System.Text.Json.JsonSerializer.Deserialize<ResultadoDecisao>(resposta, options);
-        if (resultado != null)
-        {
-            await ExecutarFerramenta(resultado.Decisao!, contexto);
-        }
-        return resultado;
 
+        var resultado = System.Text.Json.JsonSerializer.Deserialize<ResultadoDecisao>(resposta, options)
+            ?? throw new InvalidOperationException("Não foi possível desserializar a resposta da IA em ResultadoDecisao.");
+
+        if (string.IsNullOrWhiteSpace(resultado.Decisao))
+        {
+            throw new InvalidOperationException("A resposta da IA não retornou uma decisão válida.");
+        }
+
+        await ExecutarFerramenta(resultado.Decisao, contexto);
+        return resultado;
     }
+
     private async Task ExecutarFerramenta(string decisao, ContextoDecisao contexto)
     {
         var ferramenta = ferramentas.FirstOrDefault(f => f.Nome.Equals(decisao, StringComparison.OrdinalIgnoreCase));
