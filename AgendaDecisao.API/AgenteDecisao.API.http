@@ -1,6 +1,22 @@
-@AgendaDecisao.API_HostAddress = http://localhost:5240
+@AgenteDecisao.API_HostAddress = http://localhost:5240
 
-GET {{AgendaDecisao.API_HostAddress}}/weatherforecast/
+GET {{AgenteDecisao.API_HostAddress}}/health
 Accept: application/json
+
+###
+
+POST {{AgenteDecisao.API_HostAddress}}/api/agente
+Content-Type: application/json
+
+{
+  "entradaUsuario": "Cliente sinalizou dificuldade pontual de pagamento",
+  "cliente": {
+    "nome": "Cliente Exemplo",
+    "diasInadimplente": 75
+  },
+  "assinatura": {
+    "status": "ATIVA"
+  }
+}
 
 ###
