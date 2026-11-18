@@ -9,16 +9,37 @@ namespace AgenteDecisao.API.Tests.Integration;
 
 public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public const string TestApiKey = "test-api-key";
+
     public FakeServicoIA FakeServico { get; } = new();
+
+    private readonly IDictionary<string, string?> _overrides;
+
+    public TestWebApplicationFactory(IDictionary<string, string?>? overrides = null)
+    {
+        _overrides = overrides ?? new Dictionary<string, string?>();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
-            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+            var config = new Dictionary<string, string?>
             {
-                ["OpenAI:ApiKey"] = "test-key"
-            });
+                ["OpenAI:ApiKey"] = "test-key",
+                ["Authentication:AgenteApiKey"] = TestApiKey,
+                ["Authentication:AllowAnonymousInDevelopment"] = "false",
+                ["RateLimiting:Agente:PermitLimit"] = "20",
+                ["RateLimiting:Agente:WindowSeconds"] = "60",
+                ["RateLimiting:Agente:QueueLimit"] = "0"
+            };
+
+            foreach (var item in _overrides)
+            {
+                config[item.Key] = item.Value;
+            }
+
+            configBuilder.AddInMemoryCollection(config);
         });
 
         builder.ConfigureTestServices(services =>

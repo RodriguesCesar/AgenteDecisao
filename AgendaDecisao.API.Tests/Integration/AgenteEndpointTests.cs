@@ -16,6 +16,7 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
         {
             BaseAddress = new Uri("https://localhost")
         });
+        _httpClient.DefaultRequestHeaders.Add("X-Agente-Api-Key", TestWebApplicationFactory.TestApiKey);
     }
 
     [Fact]
@@ -48,5 +49,25 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
         var response = await _httpClient.PostAsJsonAsync("/api/agente", payload);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostAgente_SemApiKey_DeveRetornarUnauthorized()
+    {
+        using var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+        var payload = new
+        {
+            entradaUsuario = "Cliente com atraso relevante",
+            cliente = new { nome = "Cliente Teste", diasInadimplente = 80 },
+            assinatura = new { status = "ATIVA" }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/agente", payload);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

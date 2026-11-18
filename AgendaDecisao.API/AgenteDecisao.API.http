@@ -1,4 +1,5 @@
 @AgenteDecisao.API_HostAddress = http://localhost:5240
+@AgenteDecisaoApiKey = defina-sua-chave
 
 GET {{AgenteDecisao.API_HostAddress}}/health
 Accept: application/json
@@ -7,6 +8,7 @@ Accept: application/json
 
 POST {{AgenteDecisao.API_HostAddress}}/api/agente
 Content-Type: application/json
+X-Agente-Api-Key: {{AgenteDecisaoApiKey}}
 
 {
   "entradaUsuario": "Cliente sinalizou dificuldade pontual de pagamento",

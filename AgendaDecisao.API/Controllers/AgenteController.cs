@@ -1,6 +1,7 @@
 using AgenteDecisao.API.Agents;
 using AgenteDecisao.API.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AgenteDecisao.API.Controllers;
 
@@ -9,6 +10,7 @@ namespace AgenteDecisao.API.Controllers;
 public class AgenteController(AgenteInadimpleciaDeClientes agente) : ControllerBase
 {
     [HttpPost]
+    [EnableRateLimiting("AgentePostPolicy")]
     public async Task<IActionResult> TomarDecisao([FromBody] ContextoDecisao decisao, CancellationToken cancellationToken)
     {
         var resultado = await agente.ExecutarAsync(decisao, cancellationToken);
