@@ -41,7 +41,36 @@ Exemplo de payload:
 }
 ```
 
-## Melhorias aplicadas (fase 1)
+## Testes automatizados
+
+Para executar a suíte de testes:
+
+```bash
+dotnet test AgenteDecisao.slnx
+```
+
+Projeto de testes:
+
+- `AgendaDecisao.API.Tests`
+
+Cobertura inicial incluída:
+
+- decisão do agente aplicando ferramenta de cancelamento;
+- `GET /health` com retorno de sucesso;
+- `POST /api/agente` com payload válido;
+- `POST /api/agente` com payload inválido (retorno `400`).
+
+## CI (GitHub Actions)
+
+Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
+
+- restore da solução;
+- build em Release;
+- execução dos testes automatizados.
+
+## Melhorias aplicadas
+
+### Fase 1
 
 - remoção de segredo hardcoded do `appsettings.json`;
 - validação de configuração crítica (`OpenAI:ApiKey`) no startup;
@@ -51,6 +80,13 @@ Exemplo de payload:
 - propagação de `CancellationToken`;
 - robustez no consumo da OpenAI (`EnsureSuccessStatusCode` + validação de payload);
 - arquivo `.http` alinhado ao endpoint real.
+
+### Fase 2
+
+- criação do projeto `AgendaDecisao.API.Tests`;
+- testes unitários para regra de decisão e aplicação de ferramenta;
+- testes de integração para endpoints de health e decisão;
+- pipeline de CI com restore/build/test.
 
 ## Ação obrigatória pós-hardening
 
