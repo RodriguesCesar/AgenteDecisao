@@ -11,7 +11,6 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,19 +36,14 @@ var rateLimitSettings = builder.Configuration
     .GetSection(AgenteRateLimitingSettings.SectionName)
     .Get<AgenteRateLimitingSettings>() ?? new AgenteRateLimitingSettings();
 
-if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1 || rateLimitSettings.QueueLimit < 0)
+if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1)
 {
-    throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit, WindowSeconds e QueueLimit.");
+    throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit e WindowSeconds.");
 }
 
-var agenteLimiter = new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
-{
-    PermitLimit = rateLimitSettings.PermitLimit,
-    Window = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds),
-    QueueLimit = rateLimitSettings.QueueLimit,
-    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-    AutoReplenishment = true
-});
+var rateWindowStart = DateTimeOffset.UtcNow;
+var requestsInCurrentWindow = 0;
+var rateLimitLock = new object();
 
 builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, client) =>
 {
@@ -166,16 +160,36 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var lease = await agenteLimiter.AcquireAsync(1, context.RequestAborted);
-    if (!lease.IsAcquired)
+    var now = DateTimeOffset.UtcNow;
+    var isRateLimited = false;
+    var retryAfter = TimeSpan.Zero;
+
+    lock (rateLimitLock)
+    {
+        var elapsed = now - rateWindowStart;
+        if (elapsed >= TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds))
+        {
+            rateWindowStart = now;
+            requestsInCurrentWindow = 0;
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (requestsInCurrentWindow >= rateLimitSettings.PermitLimit)
+        {
+            isRateLimited = true;
+            retryAfter = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed;
+        }
+        else
+        {
+            requestsInCurrentWindow++;
+        }
+    }
+
+    if (isRateLimited)
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-
-        if (lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-        {
-            context.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-        }
+        context.Response.Headers.RetryAfter =
+            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
 
         var rateProblem = new ProblemDetails
         {

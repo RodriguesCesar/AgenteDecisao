@@ -25,8 +25,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Authentication:AgenteApiKey"] = TestApiKey,
                 ["Authentication:AllowAnonymousInDevelopment"] = "false",
                 ["RateLimiting:Agente:PermitLimit"] = "20",
-                ["RateLimiting:Agente:WindowSeconds"] = "60",
-                ["RateLimiting:Agente:QueueLimit"] = "0"
+                ["RateLimiting:Agente:WindowSeconds"] = "60"
             };
 
             foreach (var item in Overrides)

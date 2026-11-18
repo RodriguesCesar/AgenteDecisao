@@ -12,7 +12,6 @@ public class AgenteRateLimitingTests
         using var factory = new TestWebApplicationFactory();
         factory.Overrides["RateLimiting:Agente:PermitLimit"] = "1";
         factory.Overrides["RateLimiting:Agente:WindowSeconds"] = "60";
-        factory.Overrides["RateLimiting:Agente:QueueLimit"] = "0";
 
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {

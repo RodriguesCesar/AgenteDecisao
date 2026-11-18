@@ -41,11 +41,10 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 
 ### Rate limiting
 
-`POST /api/agente` possui limitação configurável:
+`POST /api/agente` possui limitação configurável em janela fixa:
 
 - `RateLimiting:Agente:PermitLimit`
 - `RateLimiting:Agente:WindowSeconds`
-- `RateLimiting:Agente:QueueLimit`
 
 Quando o limite é excedido, a API retorna `429 Too Many Requests`.
 
