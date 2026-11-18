@@ -13,8 +13,6 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     public FakeServicoIA FakeServico { get; } = new();
 
-    public IDictionary<string, string?> Overrides { get; } = new Dictionary<string, string?>();
-
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((_, configBuilder) =>
@@ -27,11 +25,6 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["RateLimiting:Agente:PermitLimit"] = "20",
                 ["RateLimiting:Agente:WindowSeconds"] = "60"
             };
-
-            foreach (var item in Overrides)
-            {
-                config[item.Key] = item.Value;
-            }
 
             configBuilder.AddInMemoryCollection(config);
         });

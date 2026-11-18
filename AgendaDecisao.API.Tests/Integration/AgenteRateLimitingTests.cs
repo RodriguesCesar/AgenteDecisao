@@ -9,16 +9,14 @@ public class AgenteRateLimitingTests
     [Fact]
     public async Task PostAgente_ExcedendoLimite_DeveRetornarTooManyRequests()
     {
-        using var factory = new TestWebApplicationFactory();
-        factory.Overrides["RateLimiting:Agente:PermitLimit"] = "1";
-        factory.Overrides["RateLimiting:Agente:WindowSeconds"] = "60";
+        using var factory = new LimitedRateWebApplicationFactory();
 
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });
 
-        client.DefaultRequestHeaders.Add("X-Agente-Api-Key", TestWebApplicationFactory.TestApiKey);
+        client.DefaultRequestHeaders.Add("X-Agente-Api-Key", LimitedRateWebApplicationFactory.TestApiKey);
 
         var payload = new
         {
