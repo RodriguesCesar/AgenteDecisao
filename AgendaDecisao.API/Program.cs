@@ -166,7 +166,7 @@ app.Use(async (context, next) =>
         return;
     }
 
-    using var lease = await agenteLimiter.AcquireAsync(1, context.RequestAborted);
+    var lease = await agenteLimiter.AcquireAsync(1, context.RequestAborted);
     if (!lease.IsAcquired)
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
