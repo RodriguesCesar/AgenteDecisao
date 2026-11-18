@@ -103,6 +103,50 @@ app.Use(async (context, next) =>
         return;
     }
 
+    var now = DateTimeOffset.UtcNow;
+    var isRateLimited = false;
+    var retryAfter = TimeSpan.Zero;
+
+    lock (rateLimitLock)
+    {
+        var elapsed = now - rateWindowStart;
+        if (elapsed >= TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds))
+        {
+            rateWindowStart = now;
+            requestsInCurrentWindow = 0;
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (requestsInCurrentWindow >= rateLimitSettings.PermitLimit)
+        {
+            isRateLimited = true;
+            retryAfter = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed;
+        }
+        else
+        {
+            requestsInCurrentWindow++;
+        }
+    }
+
+    if (isRateLimited)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.Response.Headers.RetryAfter =
+            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+
+        var rateProblem = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Limite de requisições excedido.",
+            Detail = "Tente novamente em alguns instantes.",
+            Instance = context.Request.Path
+        };
+        rateProblem.Extensions["traceId"] = context.TraceIdentifier;
+
+        await context.Response.WriteAsJsonAsync(rateProblem);
+        return;
+    }
+
     var authSettings = context.RequestServices.GetRequiredService<IOptions<AuthenticationSettings>>().Value;
 
     if (app.Environment.IsDevelopment() && authSettings.AllowAnonymousInDevelopment)
@@ -157,50 +201,6 @@ app.Use(async (context, next) =>
         problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
 
         await context.Response.WriteAsJsonAsync(problemUnauthorized);
-        return;
-    }
-
-    var now = DateTimeOffset.UtcNow;
-    var isRateLimited = false;
-    var retryAfter = TimeSpan.Zero;
-
-    lock (rateLimitLock)
-    {
-        var elapsed = now - rateWindowStart;
-        if (elapsed >= TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds))
-        {
-            rateWindowStart = now;
-            requestsInCurrentWindow = 0;
-            elapsed = TimeSpan.Zero;
-        }
-
-        if (requestsInCurrentWindow >= rateLimitSettings.PermitLimit)
-        {
-            isRateLimited = true;
-            retryAfter = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed;
-        }
-        else
-        {
-            requestsInCurrentWindow++;
-        }
-    }
-
-    if (isRateLimited)
-    {
-        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        context.Response.Headers.RetryAfter =
-            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-
-        var rateProblem = new ProblemDetails
-        {
-            Status = StatusCodes.Status429TooManyRequests,
-            Title = "Limite de requisições excedido.",
-            Detail = "Tente novamente em alguns instantes.",
-            Instance = context.Request.Path
-        };
-        rateProblem.Extensions["traceId"] = context.TraceIdentifier;
-
-        await context.Response.WriteAsJsonAsync(rateProblem);
         return;
     }
 
