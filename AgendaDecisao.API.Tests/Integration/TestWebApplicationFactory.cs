@@ -13,16 +13,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     public FakeServicoIA FakeServico { get; } = new();
 
-    private readonly IDictionary<string, string?> _overrides;
-
-    public TestWebApplicationFactory() : this(new Dictionary<string, string?>())
-    {
-    }
-
-    public TestWebApplicationFactory(IDictionary<string, string?> overrides)
-    {
-        _overrides = overrides;
-    }
+    public IDictionary<string, string?> Overrides { get; } = new Dictionary<string, string?>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -38,7 +29,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["RateLimiting:Agente:QueueLimit"] = "0"
             };
 
-            foreach (var item in _overrides)
+            foreach (var item in Overrides)
             {
                 config[item.Key] = item.Value;
             }

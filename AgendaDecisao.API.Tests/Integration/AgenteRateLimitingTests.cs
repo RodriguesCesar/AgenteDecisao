@@ -9,12 +9,10 @@ public class AgenteRateLimitingTests
     [Fact]
     public async Task PostAgente_ExcedendoLimite_DeveRetornarTooManyRequests()
     {
-        using var factory = new TestWebApplicationFactory(new Dictionary<string, string?>
-        {
-            ["RateLimiting:Agente:PermitLimit"] = "1",
-            ["RateLimiting:Agente:WindowSeconds"] = "60",
-            ["RateLimiting:Agente:QueueLimit"] = "0"
-        });
+        using var factory = new TestWebApplicationFactory();
+        factory.Overrides["RateLimiting:Agente:PermitLimit"] = "1";
+        factory.Overrides["RateLimiting:Agente:WindowSeconds"] = "60";
+        factory.Overrides["RateLimiting:Agente:QueueLimit"] = "0";
 
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {

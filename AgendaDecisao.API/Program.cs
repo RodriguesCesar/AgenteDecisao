@@ -201,7 +201,7 @@ app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
-app.MapControllers();
+app.MapControllers().RequireRateLimiting("AgentePostPolicy");
 
 app.Run();
 
