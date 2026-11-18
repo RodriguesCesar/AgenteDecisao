@@ -15,9 +15,13 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private readonly IDictionary<string, string?> _overrides;
 
-    public TestWebApplicationFactory(IDictionary<string, string?>? overrides = null)
+    public TestWebApplicationFactory() : this(new Dictionary<string, string?>())
     {
-        _overrides = overrides ?? new Dictionary<string, string?>();
+    }
+
+    public TestWebApplicationFactory(IDictionary<string, string?> overrides)
+    {
+        _overrides = overrides;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
