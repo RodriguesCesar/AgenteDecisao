@@ -67,9 +67,9 @@ builder.Services.AddRateLimiter(options =>
         await context.HttpContext.Response.WriteAsJsonAsync(problem);
     };
 
-    options.AddPolicy("AgentePostPolicy", httpContext =>
+    options.AddPolicy("AgentePostPolicy", _ =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: "agente-post",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = rateLimitSettings.PermitLimit,
