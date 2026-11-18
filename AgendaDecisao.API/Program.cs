@@ -42,41 +42,13 @@ if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1 || 
     throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit, WindowSeconds e QueueLimit.");
 }
 
-builder.Services.AddRateLimiter(options =>
+var agenteLimiter = new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
 {
-    options.OnRejected = async (context, _) =>
-    {
-        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-
-        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-        {
-            context.HttpContext.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-        }
-
-        var problem = new ProblemDetails
-        {
-            Status = StatusCodes.Status429TooManyRequests,
-            Title = "Limite de requisições excedido.",
-            Detail = "Tente novamente em alguns instantes.",
-            Instance = context.HttpContext.Request.Path
-        };
-
-        problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
-
-        await context.HttpContext.Response.WriteAsJsonAsync(problem);
-    };
-
-    options.AddPolicy("AgentePostPolicy", _ =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: "agente-post",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = rateLimitSettings.PermitLimit,
-                Window = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds),
-                QueueLimit = rateLimitSettings.QueueLimit,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-            }));
+    PermitLimit = rateLimitSettings.PermitLimit,
+    Window = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds),
+    QueueLimit = rateLimitSettings.QueueLimit,
+    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+    AutoReplenishment = true
 });
 
 builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, client) =>
@@ -194,14 +166,37 @@ app.Use(async (context, next) =>
         return;
     }
 
+    using var lease = await agenteLimiter.AcquireAsync(1, context.RequestAborted);
+    if (!lease.IsAcquired)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        if (lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        var rateProblem = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Limite de requisições excedido.",
+            Detail = "Tente novamente em alguns instantes.",
+            Instance = context.Request.Path
+        };
+        rateProblem.Extensions["traceId"] = context.TraceIdentifier;
+
+        await context.Response.WriteAsJsonAsync(rateProblem);
+        return;
+    }
+
     await next();
 });
 
-app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
-app.MapControllers().RequireRateLimiting("AgentePostPolicy");
+app.MapControllers();
 
 app.Run();
 
