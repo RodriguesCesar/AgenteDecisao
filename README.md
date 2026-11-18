@@ -81,8 +81,7 @@ Cobertura inicial incluída:
 - `GET /health` com retorno de sucesso;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`);
-- `POST /api/agente` excedendo limite de requisições (retorno `429`).
+- `POST /api/agente` sem API key (retorno `401`).
 
 ## CI (GitHub Actions)
 
@@ -116,7 +115,7 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 
 - autenticação por API key no endpoint de decisão;
 - rate limiting configurável para `POST /api/agente`;
-- testes de integração para cenários `401` e `429`;
+- testes de integração para cenário `401`;
 - documentação operacional atualizada para autenticação e limites.
 
 ## Ação obrigatória pós-hardening
