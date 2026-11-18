@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc.Testing;
+
 namespace AgenteDecisao.API.Tests.Integration;
 
 public class HealthEndpointTests : IClassFixture<TestWebApplicationFactory>
