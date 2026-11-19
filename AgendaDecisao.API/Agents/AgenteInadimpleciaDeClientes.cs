@@ -6,36 +6,38 @@ namespace AgenteDecisao.API.Agents;
 
 public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFerramentaAgente> ferramentas)
 {
-    /// <summary>
-    /// Método principal para processar o contexto de decisão
-    /// e tomar ações apropriadas com base nas informações
-    /// de inadimplência do cliente.
-    /// </summary>
-    private static string ConstruirPrompt(ContextoDecisao contexto)
+    private static string DeterminarDecisao(int diasInadimplente)
+    {
+        if (diasInadimplente < 60)
+        {
+            return "MANTER";
+        }
+
+        if (diasInadimplente <= 120)
+        {
+            return "SUSPENDER";
+        }
+
+        return "CANCELAR";
+    }
+
+    private static string ConstruirPromptJustificativa(ContextoDecisao contexto, string decisao)
     {
         return $@"
-                Você é um agente decisor corporativo.
+                Você é um assistente de atendimento corporativo.
 
-                Regras obrigatórias:
-                - Nunca cancelar se atraso < 60 dias
-                - Suspender entre 60 e 120 dias
-                - Cancelar acima de 120 dias
+                A decisão final já foi definida por regra de negócio e não pode ser alterada.
+                Decisão definida: {decisao}
 
+                Dados para contexto:
                 Cliente: {contexto.Cliente?.Nome}
                 Dias em atraso: {contexto.Cliente?.DiasInadimplente}
-                Status atual: {contexto.Assinatura?.Status}
-                Contexto do cliente : {contexto.EntradaUsuario}
-                Responda apenas JSON válido:
-                {{
-                  ""decisao"": ""SUSPENDER | CANCELAR | MANTER"",
-                  ""confianca"": 0-1,
-                  ""justificativa"": ""motivo""
-                }}
+                Status atual da assinatura: {contexto.Assinatura?.Status}
+                Contexto informado pelo usuário: {contexto.EntradaUsuario}
 
-                Não utilize markdown.
-                Não utilize ```json.
-                Não explique nada.
-                Apenas retorne o objeto JSON.
+                Gere apenas uma justificativa curta e objetiva para a decisão.
+                Sem markdown, sem JSON e sem listas.
+                Máximo de 240 caracteres.
             ";
     }
 
@@ -43,23 +45,28 @@ public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFer
     {
         ArgumentNullException.ThrowIfNull(contexto);
 
-        var prompt = ConstruirPrompt(contexto);
-        var resposta = await servicoIA.ExecutarAsync(prompt, cancellationToken);
-
-        var options = new System.Text.Json.JsonSerializerOptions
+        if (contexto.Cliente is null)
         {
-            PropertyNameCaseInsensitive = true
-        };
-
-        var resultado = System.Text.Json.JsonSerializer.Deserialize<ResultadoDecisao>(resposta, options)
-            ?? throw new InvalidOperationException("Não foi possível desserializar a resposta da IA em ResultadoDecisao.");
-
-        if (string.IsNullOrWhiteSpace(resultado.Decisao))
-        {
-            throw new InvalidOperationException("A resposta da IA não retornou uma decisão válida.");
+            throw new InvalidOperationException("Cliente é obrigatório para tomada de decisão.");
         }
 
-        await ExecutarFerramenta(resultado.Decisao, contexto);
+        var decisao = DeterminarDecisao(contexto.Cliente.DiasInadimplente);
+        var prompt = ConstruirPromptJustificativa(contexto, decisao);
+        var justificativa = await servicoIA.ExecutarAsync(prompt, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(justificativa))
+        {
+            throw new InvalidOperationException("A IA não retornou justificativa válida para a decisão.");
+        }
+
+        var resultado = new ResultadoDecisao
+        {
+            Decisao = decisao,
+            Confianca = 1.0,
+            Justificativa = justificativa.Trim()
+        };
+
+        await ExecutarFerramenta(decisao, contexto);
         return resultado;
     }
 
