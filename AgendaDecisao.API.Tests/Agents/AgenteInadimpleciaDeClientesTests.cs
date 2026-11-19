@@ -10,28 +10,64 @@ namespace AgenteDecisao.API.Tests.Agents;
 public class AgenteInadimpleciaDeClientesTests
 {
     [Fact]
-    public async Task ExecutarAsync_ComDecisaoCancelar_DeveAplicarFerramenta()
+    public async Task ExecutarAsync_ComAtrasoMenorQue60_DeveManterAssinaturaAtiva()
     {
-        var servicoIA = new ServicoIAFake("{\"decisao\":\"CANCELAR\",\"confianca\":0.99,\"justificativa\":\"atraso acima de 120 dias\"}");
+        var agente = CriarAgente("Cliente em dia com plano de regularização.");
+        var contexto = CriarContexto(30, "ATIVA");
+
+        var resultado = await agente.ExecutarAsync(contexto);
+
+        Assert.Equal("MANTER", resultado.Decisao);
+        Assert.Equal(1.0, resultado.Confianca);
+        Assert.Equal("ATIVA", contexto.Assinatura?.Status);
+    }
+
+    [Fact]
+    public async Task ExecutarAsync_ComAtrasoEntre60e120_DeveSuspenderAssinatura()
+    {
+        var agente = CriarAgente("Atraso relevante, mas com possibilidade de regularização.");
+        var contexto = CriarContexto(60, "ATIVA");
+
+        var resultado = await agente.ExecutarAsync(contexto);
+
+        Assert.Equal("SUSPENDER", resultado.Decisao);
+        Assert.Equal(1.0, resultado.Confianca);
+        Assert.Equal("SUSPENSA", contexto.Assinatura?.Status);
+    }
+
+    [Fact]
+    public async Task ExecutarAsync_ComAtrasoAcimaDe120_DeveCancelarAssinatura()
+    {
+        var agente = CriarAgente("Atraso crítico sem previsão de normalização.");
+        var contexto = CriarContexto(121, "ATIVA");
+
+        var resultado = await agente.ExecutarAsync(contexto);
+
+        Assert.Equal("CANCELAR", resultado.Decisao);
+        Assert.Equal(1.0, resultado.Confianca);
+        Assert.Equal("CANCELADA", contexto.Assinatura?.Status);
+    }
+
+    private static AgenteInadimpleciaDeClientes CriarAgente(string justificativaIA)
+    {
+        var servicoIA = new ServicoIAFake(justificativaIA);
         var ferramentas = new List<IFerramentaAgente>
         {
             new FerramentaSuspender(),
             new FerramentaCencelar()
         };
 
-        var agente = new AgenteInadimpleciaDeClientes(servicoIA, ferramentas);
+        return new AgenteInadimpleciaDeClientes(servicoIA, ferramentas);
+    }
 
-        var contexto = new ContextoDecisao
+    private static ContextoDecisao CriarContexto(int diasInadimplente, string statusAssinatura)
+    {
+        return new ContextoDecisao
         {
-            EntradaUsuario = "Cliente sem perspectiva de regularização",
-            Cliente = new Cliente { Nome = "Cliente Teste", DiasInadimplente = 150 },
-            Assinatura = new Assinatura { Status = "ATIVA" }
+            EntradaUsuario = "Cliente informou situação financeira temporária.",
+            Cliente = new Cliente { Nome = "Cliente Teste", DiasInadimplente = diasInadimplente },
+            Assinatura = new Assinatura { Status = statusAssinatura }
         };
-
-        var resultado = await agente.ExecutarAsync(contexto);
-
-        Assert.Equal("CANCELAR", resultado.Decisao);
-        Assert.Equal("CANCELADA", contexto.Assinatura?.Status);
     }
 
     private sealed class ServicoIAFake(string response) : IServicoIA
