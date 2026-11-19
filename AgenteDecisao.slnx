@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="AgendaDecisao.API/AgenteDecisao.API.csproj" />
+  <Project Path="AgendaDecisao.API.Tests/AgenteDecisao.API.Tests.csproj" />
 </Solution>
