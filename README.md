@@ -11,7 +11,13 @@ API ASP.NET para tomada de decisão de inadimplência com suporte a LLM.
 $env:OpenAI__ApiKey="sua-chave-aqui"
 ```
 
-3. Alternativamente, use o arquivo local de exemplo e mantenha fora de versionamento:
+3. Defina também uma API key para proteger o endpoint de decisão:
+
+```powershell
+$env:Authentication__AgenteApiKey="sua-chave-interna-da-api"
+```
+
+4. Alternativamente, use o arquivo local de exemplo e mantenha fora de versionamento:
 
 - `AgendaDecisao.API/appsettings.Local.example.json`
 
@@ -24,7 +30,45 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 ## Endpoints
 
 - `GET /health`
+- `GET /metrics`
 - `POST /api/agente`
+
+### Autenticação do endpoint
+
+`POST /api/agente` exige o header `X-Agente-Api-Key`.
+
+- Em `Development`, o bypass pode ser habilitado com `Authentication:AllowAnonymousInDevelopment=true`.
+- Em outros ambientes, mantenha `AllowAnonymousInDevelopment=false` e configure `Authentication:AgenteApiKey`.
+
+### Rate limiting
+
+`POST /api/agente` possui limitação configurável em janela fixa:
+
+- `RateLimiting:Agente:PermitLimit`
+- `RateLimiting:Agente:WindowSeconds`
+
+Quando o limite é excedido, a API retorna `429 Too Many Requests`.
+
+### Observabilidade
+
+A API registra eventos de segurança com `traceId` para:
+
+- falha de autenticação por ausência de header;
+- falha de autenticação por chave inválida;
+- rejeição por rate limiting;
+- erro de configuração de autenticação.
+
+O endpoint `GET /metrics` expõe métricas no formato Prometheus:
+
+- `agente_auth_success_total`
+- `agente_auth_failures_total`
+- `agente_auth_config_errors_total`
+- `agente_rate_limit_rejections_total`
+
+Exemplo de consultas:
+
+- `agente_auth_failures_total`
+- `agente_rate_limit_rejections_total`
 
 Exemplo de payload:
 
@@ -57,8 +101,10 @@ Cobertura inicial incluída:
 
 - decisão do agente aplicando ferramenta de cancelamento;
 - `GET /health` com retorno de sucesso;
+- `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
-- `POST /api/agente` com payload inválido (retorno `400`).
+- `POST /api/agente` com payload inválido (retorno `400`);
+- `POST /api/agente` sem API key (retorno `401`).
 
 ## CI (GitHub Actions)
 
@@ -87,6 +133,20 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - testes unitários para regra de decisão e aplicação de ferramenta;
 - testes de integração para endpoints de health e decisão;
 - pipeline de CI com restore/build/test.
+
+### Fase 3
+
+- autenticação por API key no endpoint de decisão;
+- rate limiting configurável para `POST /api/agente`;
+- testes de integração para cenário `401`;
+- documentação operacional atualizada para autenticação e limites.
+
+### Fase 4
+
+- logs estruturados para eventos de segurança com `traceId`;
+- endpoint `/metrics` no formato Prometheus;
+- contadores de autenticação, erro de configuração e rate limiting;
+- teste de integração para garantir exposição das métricas.
 
 ## Ação obrigatória pós-hardening
 

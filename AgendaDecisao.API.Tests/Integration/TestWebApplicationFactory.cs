@@ -9,16 +9,24 @@ namespace AgenteDecisao.API.Tests.Integration;
 
 public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public const string TestApiKey = "test-api-key";
+
     public FakeServicoIA FakeServico { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
-            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+            var config = new Dictionary<string, string?>
             {
-                ["OpenAI:ApiKey"] = "test-key"
-            });
+                ["OpenAI:ApiKey"] = "test-key",
+                ["Authentication:AgenteApiKey"] = TestApiKey,
+                ["Authentication:AllowAnonymousInDevelopment"] = "false",
+                ["RateLimiting:Agente:PermitLimit"] = "20",
+                ["RateLimiting:Agente:WindowSeconds"] = "60"
+            };
+
+            configBuilder.AddInMemoryCollection(config);
         });
 
         builder.ConfigureTestServices(services =>
