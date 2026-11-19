@@ -33,6 +33,16 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 - `GET /metrics`
 - `POST /api/agente`
 
+### Regras determinísticas de decisão (Fase 5)
+
+A decisão final é calculada em código e **não depende da IA**:
+
+- atraso `< 60` dias → `MANTER`
+- atraso entre `60` e `120` dias (inclusive) → `SUSPENDER`
+- atraso `> 120` dias → `CANCELAR`
+
+A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão.
+
 ### Autenticação do endpoint
 
 `POST /api/agente` exige o header `X-Agente-Api-Key`.
@@ -99,7 +109,9 @@ Projeto de testes:
 
 Cobertura inicial incluída:
 
-- decisão do agente aplicando ferramenta de cancelamento;
+- decisão determinística do agente para manter assinatura (`< 60`);
+- decisão determinística do agente para suspender assinatura (`60-120`);
+- decisão determinística do agente para cancelar assinatura (`> 120`);
 - `GET /health` com retorno de sucesso;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
@@ -147,6 +159,12 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - endpoint `/metrics` no formato Prometheus;
 - contadores de autenticação, erro de configuração e rate limiting;
 - teste de integração para garantir exposição das métricas.
+
+### Fase 5
+
+- decisão final movida para regras determinísticas no código;
+- IA utilizada apenas para justificativa da decisão;
+- ampliação de testes unitários para cobrir faixas de atraso críticas.
 
 ## Ação obrigatória pós-hardening
 
