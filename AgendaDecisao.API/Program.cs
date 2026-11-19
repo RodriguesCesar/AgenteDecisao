@@ -45,6 +45,11 @@ var rateWindowStart = DateTimeOffset.UtcNow;
 var requestsInCurrentWindow = 0;
 var rateLimitLock = new object();
 
+long authSuccessCount = 0;
+long authFailureCount = 0;
+long authConfigErrorCount = 0;
+long rateLimitRejectionCount = 0;
+
 builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, client) =>
 {
     var settings = serviceProvider.GetRequiredService<IOptions<OpenAISettings>>().Value;
@@ -57,6 +62,7 @@ builder.Services.AddScoped<IFerramentaAgente, FerramentaCencelar>();
 builder.Services.AddScoped<AgenteInadimpleciaDeClientes>();
 
 var app = builder.Build();
+var securityLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SecurityEvents");
 
 app.UseExceptionHandler(exceptionHandlerApp =>
 {
@@ -130,9 +136,16 @@ app.Use(async (context, next) =>
 
     if (isRateLimited)
     {
+        Interlocked.Increment(ref rateLimitRejectionCount);
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         context.Response.Headers.RetryAfter =
             Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+
+        securityLogger.LogWarning(
+            "Requisição bloqueada por rate limiting em {Path}. RetryAfterSeconds={RetryAfterSeconds} TraceId={TraceId}",
+            context.Request.Path,
+            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)),
+            context.TraceIdentifier);
 
         var rateProblem = new ProblemDetails
         {
@@ -151,12 +164,15 @@ app.Use(async (context, next) =>
 
     if (app.Environment.IsDevelopment() && authSettings.AllowAnonymousInDevelopment)
     {
+        Interlocked.Increment(ref authSuccessCount);
         await next();
         return;
     }
 
     if (string.IsNullOrWhiteSpace(authSettings.AgenteApiKey))
     {
+        Interlocked.Increment(ref authConfigErrorCount);
+
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         var problemConfig = new ProblemDetails
         {
@@ -167,6 +183,11 @@ app.Use(async (context, next) =>
         };
         problemConfig.Extensions["traceId"] = context.TraceIdentifier;
 
+        securityLogger.LogError(
+            "Configuração inválida de autenticação no endpoint {Path}. TraceId={TraceId}",
+            context.Request.Path,
+            context.TraceIdentifier);
+
         await context.Response.WriteAsJsonAsync(problemConfig);
         return;
     }
@@ -174,6 +195,8 @@ app.Use(async (context, next) =>
     if (!context.Request.Headers.TryGetValue("X-Agente-Api-Key", out var providedApiKey) ||
         string.IsNullOrWhiteSpace(providedApiKey))
     {
+        Interlocked.Increment(ref authFailureCount);
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         var problemUnauthorized = new ProblemDetails
         {
@@ -184,12 +207,19 @@ app.Use(async (context, next) =>
         };
         problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
 
+        securityLogger.LogWarning(
+            "Falha de autenticação por header ausente em {Path}. TraceId={TraceId}",
+            context.Request.Path,
+            context.TraceIdentifier);
+
         await context.Response.WriteAsJsonAsync(problemUnauthorized);
         return;
     }
 
     if (!ApiKeysMatch(providedApiKey.ToString(), authSettings.AgenteApiKey))
     {
+        Interlocked.Increment(ref authFailureCount);
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         var problemUnauthorized = new ProblemDetails
         {
@@ -200,19 +230,43 @@ app.Use(async (context, next) =>
         };
         problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
 
+        securityLogger.LogWarning(
+            "Falha de autenticação por chave inválida em {Path}. TraceId={TraceId}",
+            context.Request.Path,
+            context.TraceIdentifier);
+
         await context.Response.WriteAsJsonAsync(problemUnauthorized);
         return;
     }
 
+    Interlocked.Increment(ref authSuccessCount);
     await next();
 });
 
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
+app.MapGet("/metrics", () => Results.Text(BuildMetrics(), "text/plain; version=0.0.4; charset=utf-8"));
 app.MapControllers();
 
 app.Run();
+
+string BuildMetrics()
+{
+    var sb = new StringBuilder();
+    AppendCounter(sb, "agente_auth_success_total", "Total de autenticações válidas no endpoint /api/agente.", Interlocked.Read(ref authSuccessCount));
+    AppendCounter(sb, "agente_auth_failures_total", "Total de falhas de autenticação no endpoint /api/agente.", Interlocked.Read(ref authFailureCount));
+    AppendCounter(sb, "agente_auth_config_errors_total", "Total de erros de configuração de autenticação.", Interlocked.Read(ref authConfigErrorCount));
+    AppendCounter(sb, "agente_rate_limit_rejections_total", "Total de rejeições por rate limiting no endpoint /api/agente.", Interlocked.Read(ref rateLimitRejectionCount));
+    return sb.ToString();
+}
+
+static void AppendCounter(StringBuilder sb, string name, string help, long value)
+{
+    sb.Append("# HELP ").Append(name).Append(' ').Append(help).AppendLine();
+    sb.Append("# TYPE ").Append(name).Append(" counter").AppendLine();
+    sb.Append(name).Append(' ').Append(value.ToString(CultureInfo.InvariantCulture)).AppendLine();
+}
 
 static bool ApiKeysMatch(string provided, string expected)
 {

@@ -6,6 +6,11 @@ Accept: application/json
 
 ###
 
+GET {{AgenteDecisao.API_HostAddress}}/metrics
+Accept: text/plain
+
+###
+
 POST {{AgenteDecisao.API_HostAddress}}/api/agente
 Content-Type: application/json
 X-Agente-Api-Key: {{AgenteDecisaoApiKey}}
