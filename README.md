@@ -33,7 +33,7 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 - `GET /metrics`
 - `POST /api/agente`
 
-### Regras determinísticas de decisão 
+### Regras determinísticas de decisão
 
 A decisão final é calculada em código e **não depende da IA**:
 
@@ -43,7 +43,7 @@ A decisão final é calculada em código e **não depende da IA**:
 
 A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão.
 
-### Resiliência de justificativa 
+### Resiliência de justificativa
 
 Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a decisão determinística e retorna justificativa fallback:
 
@@ -187,6 +187,11 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - fallback de justificativa para indisponibilidade da IA sem quebrar resposta de decisão;
 - métrica `agente_justificativa_fallback_total` para observabilidade de fallback;
 - rate limiting segmentado por cliente (`X-Agente-Client-Id`) ou identificador derivado da API key.
+
+### Fase 7
+
+- remediação da vulnerabilidade transitiva do `Microsoft.OpenApi` com pin explícito para `2.12.0`;
+- eliminação do warning `NU1903` no restore/build/test.
 
 ## Ação obrigatória pós-hardening
 
