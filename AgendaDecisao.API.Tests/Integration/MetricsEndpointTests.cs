@@ -41,6 +41,7 @@ public class MetricsEndpointTests : IClassFixture<TestWebApplicationFactory>
         Assert.Contains("agente_auth_failures_total", metrics);
         Assert.Contains("agente_auth_config_errors_total", metrics);
         Assert.Contains("agente_rate_limit_rejections_total", metrics);
+        Assert.Contains("agente_justificativa_fallback_total", metrics);
 
         var match = Regex.Match(metrics, @"agente_auth_failures_total\s+(\d+)");
         Assert.True(match.Success);

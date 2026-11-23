@@ -1,3 +1,4 @@
+using AgenteDecisao.API.Models;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
 using System.Net.Http.Json;
@@ -23,6 +24,7 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
     public async Task PostAgente_ComPayloadValido_DeveRetornarOk()
     {
         _factory.FakeServico.Response = "{\"decisao\":\"SUSPENDER\",\"confianca\":0.8,\"justificativa\":\"atraso na faixa de suspensão\"}";
+        _factory.FakeServico.ExceptionToThrow = null;
 
         var payload = new
         {
@@ -34,6 +36,29 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
         var response = await _httpClient.PostAsJsonAsync("/api/agente", payload);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostAgente_QuandoIAFalha_DeveRetornarOkComJustificativaFallback()
+    {
+        _factory.FakeServico.ExceptionToThrow = new HttpRequestException("OpenAI indisponível");
+
+        var payload = new
+        {
+            entradaUsuario = "Cliente com atraso relevante",
+            cliente = new { nome = "Cliente Teste", diasInadimplente = 80 },
+            assinatura = new { status = "ATIVA" }
+        };
+
+        var response = await _httpClient.PostAsJsonAsync("/api/agente", payload);
+        var resultado = await response.Content.ReadFromJsonAsync<ResultadoDecisao>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(resultado);
+        Assert.Equal("SUSPENDER", resultado!.Decisao);
+        Assert.Equal("Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.", resultado.Justificativa);
+
+        _factory.FakeServico.ExceptionToThrow = null;
     }
 
     [Fact]

@@ -1,11 +1,23 @@
 using AgenteDecisao.API.Models;
 using AgenteDecisao.API.Services.Interfaces;
 using AgenteDecisao.API.Tools.Intarfaces;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using System.Threading;
 
 namespace AgenteDecisao.API.Agents;
 
-public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFerramentaAgente> ferramentas)
+public class AgenteInadimpleciaDeClientes(
+    IServicoIA servicoIA,
+    IEnumerable<IFerramentaAgente> ferramentas,
+    ILogger<AgenteInadimpleciaDeClientes> logger,
+    IHttpContextAccessor httpContextAccessor)
 {
+    private const string JustificativaFallback = "Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.";
+    private static long _justificativaFallbackCount;
+
+    public static long JustificativaFallbackCount => Interlocked.Read(ref _justificativaFallbackCount);
+
     private static string DeterminarDecisao(int diasInadimplente)
     {
         if (diasInadimplente < 60)
@@ -51,23 +63,45 @@ public class AgenteInadimpleciaDeClientes(IServicoIA servicoIA, IEnumerable<IFer
         }
 
         var decisao = DeterminarDecisao(contexto.Cliente.DiasInadimplente);
-        var prompt = ConstruirPromptJustificativa(contexto, decisao);
-        var justificativa = await servicoIA.ExecutarAsync(prompt, cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(justificativa))
-        {
-            throw new InvalidOperationException("A IA não retornou justificativa válida para a decisão.");
-        }
+        var justificativa = await ObterJustificativaAsync(contexto, decisao, cancellationToken);
 
         var resultado = new ResultadoDecisao
         {
             Decisao = decisao,
             Confianca = 1.0,
-            Justificativa = justificativa.Trim()
+            Justificativa = justificativa
         };
 
         await ExecutarFerramenta(decisao, contexto);
         return resultado;
+    }
+
+    private async Task<string> ObterJustificativaAsync(ContextoDecisao contexto, string decisao, CancellationToken cancellationToken)
+    {
+        var prompt = ConstruirPromptJustificativa(contexto, decisao);
+
+        try
+        {
+            var justificativa = await servicoIA.ExecutarAsync(prompt, cancellationToken);
+            if (string.IsNullOrWhiteSpace(justificativa))
+            {
+                throw new InvalidOperationException("A IA não retornou justificativa válida para a decisão.");
+            }
+
+            return justificativa.Trim();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            Interlocked.Increment(ref _justificativaFallbackCount);
+
+            var traceId = httpContextAccessor.HttpContext?.TraceIdentifier ?? "sem-trace-id";
+            logger.LogWarning(
+                ex,
+                "Falha ao gerar justificativa por IA. Aplicando fallback. TraceId={TraceId}",
+                traceId);
+
+            return JustificativaFallback;
+        }
     }
 
     private async Task ExecutarFerramenta(string decisao, ContextoDecisao contexto)

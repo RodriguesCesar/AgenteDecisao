@@ -4,6 +4,8 @@ using AgenteDecisao.API.Services.Interfaces;
 using AgenteDecisao.API.Tools;
 using AgenteDecisao.API.Tools.Intarfaces;
 using AgendaDecisao.API.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgenteDecisao.API.Tests.Agents;
 
@@ -48,16 +50,37 @@ public class AgenteInadimpleciaDeClientesTests
         Assert.Equal("CANCELADA", contexto.Assinatura?.Status);
     }
 
-    private static AgenteInadimpleciaDeClientes CriarAgente(string justificativaIA)
+    [Fact]
+    public async Task ExecutarAsync_QuandoIAFalha_DeveAplicarJustificativaFallback()
     {
-        var servicoIA = new ServicoIAFake(justificativaIA);
+        var agente = CriarAgente(exceptionToThrow: new HttpRequestException("OpenAI indisponível"));
+        var contexto = CriarContexto(80, "ATIVA");
+
+        var resultado = await agente.ExecutarAsync(contexto);
+
+        Assert.Equal("SUSPENDER", resultado.Decisao);
+        Assert.Equal("Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.", resultado.Justificativa);
+    }
+
+    private static AgenteInadimpleciaDeClientes CriarAgente(string response = "Justificativa padrão", Exception? exceptionToThrow = null)
+    {
+        var servicoIA = new ServicoIAFake(response, exceptionToThrow);
         var ferramentas = new List<IFerramentaAgente>
         {
             new FerramentaSuspender(),
             new FerramentaCencelar()
         };
 
-        return new AgenteInadimpleciaDeClientes(servicoIA, ferramentas);
+        var contextAccessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { TraceIdentifier = "unit-test-trace" }
+        };
+
+        return new AgenteInadimpleciaDeClientes(
+            servicoIA,
+            ferramentas,
+            NullLogger<AgenteInadimpleciaDeClientes>.Instance,
+            contextAccessor);
     }
 
     private static ContextoDecisao CriarContexto(int diasInadimplente, string statusAssinatura)
@@ -70,9 +93,16 @@ public class AgenteInadimpleciaDeClientesTests
         };
     }
 
-    private sealed class ServicoIAFake(string response) : IServicoIA
+    private sealed class ServicoIAFake(string response, Exception? exceptionToThrow) : IServicoIA
     {
         public Task<string> ExecutarAsync(string prompt, CancellationToken cancellationToken = default)
-            => Task.FromResult(response);
+        {
+            if (exceptionToThrow is not null)
+            {
+                throw exceptionToThrow;
+            }
+
+            return Task.FromResult(response);
+        }
     }
 }
