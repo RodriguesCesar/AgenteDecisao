@@ -33,7 +33,7 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 - `GET /metrics`
 - `POST /api/agente`
 
-### Regras determinísticas de decisão (Fase 5)
+### Regras determinísticas de decisão 
 
 A decisão final é calculada em código e **não depende da IA**:
 
@@ -43,7 +43,7 @@ A decisão final é calculada em código e **não depende da IA**:
 
 A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão.
 
-### Resiliência de justificativa (Fase 6)
+### Resiliência de justificativa 
 
 Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a decisão determinística e retorna justificativa fallback:
 
