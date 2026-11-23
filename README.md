@@ -132,8 +132,7 @@ Cobertura inicial incluída:
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`);
-- segmentação de rate limit por `X-Agente-Client-Id`.
+- `POST /api/agente` sem API key (retorno `401`).
 
 ## CI (GitHub Actions)
 
@@ -187,8 +186,7 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 
 - fallback de justificativa para indisponibilidade da IA sem quebrar resposta de decisão;
 - métrica `agente_justificativa_fallback_total` para observabilidade de fallback;
-- rate limiting segmentado por cliente (`X-Agente-Client-Id`) ou identificador derivado da API key;
-- testes cobrindo fallback e segmentação de rate limit por cliente.
+- rate limiting segmentado por cliente (`X-Agente-Client-Id`) ou identificador derivado da API key.
 
 ## Ação obrigatória pós-hardening
 
