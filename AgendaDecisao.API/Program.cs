@@ -18,6 +18,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
+builder.Services.AddHttpContextAccessor();
 
 builder.Services
     .AddOptions<OpenAISettings>()
@@ -41,8 +42,7 @@ if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1)
     throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit e WindowSeconds.");
 }
 
-var rateWindowStart = DateTimeOffset.UtcNow;
-var requestsInCurrentWindow = 0;
+var rateLimitBuckets = new Dictionary<string, RateLimitBucket>(StringComparer.Ordinal);
 var rateLimitLock = new object();
 
 long authSuccessCount = 0;
@@ -109,42 +109,102 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var now = DateTimeOffset.UtcNow;
-    var isRateLimited = false;
-    var retryAfter = TimeSpan.Zero;
+    var authSettings = context.RequestServices.GetRequiredService<IOptions<AuthenticationSettings>>().Value;
+    string rateLimitKey;
 
-    lock (rateLimitLock)
+    if (app.Environment.IsDevelopment() && authSettings.AllowAnonymousInDevelopment)
     {
-        var elapsed = now - rateWindowStart;
-        if (elapsed >= TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds))
+        Interlocked.Increment(ref authSuccessCount);
+        rateLimitKey = BuildRateLimitKey(context, "development-bypass");
+    }
+    else
+    {
+        if (string.IsNullOrWhiteSpace(authSettings.AgenteApiKey))
         {
-            rateWindowStart = now;
-            requestsInCurrentWindow = 0;
-            elapsed = TimeSpan.Zero;
+            Interlocked.Increment(ref authConfigErrorCount);
+
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            var problemConfig = new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Configuração de autenticação inválida.",
+                Detail = "A chave de API obrigatória não foi configurada.",
+                Instance = context.Request.Path
+            };
+            problemConfig.Extensions["traceId"] = context.TraceIdentifier;
+
+            securityLogger.LogError(
+                "Configuração inválida de autenticação no endpoint {Path}. TraceId={TraceId}",
+                context.Request.Path,
+                context.TraceIdentifier);
+
+            await context.Response.WriteAsJsonAsync(problemConfig);
+            return;
         }
 
-        if (requestsInCurrentWindow >= rateLimitSettings.PermitLimit)
+        if (!context.Request.Headers.TryGetValue("X-Agente-Api-Key", out var providedApiKey) ||
+            string.IsNullOrWhiteSpace(providedApiKey))
         {
-            isRateLimited = true;
-            retryAfter = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed;
+            Interlocked.Increment(ref authFailureCount);
+
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            var problemUnauthorized = new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Não autorizado.",
+                Detail = "Header X-Agente-Api-Key não informado.",
+                Instance = context.Request.Path
+            };
+            problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
+
+            securityLogger.LogWarning(
+                "Falha de autenticação por header ausente em {Path}. TraceId={TraceId}",
+                context.Request.Path,
+                context.TraceIdentifier);
+
+            await context.Response.WriteAsJsonAsync(problemUnauthorized);
+            return;
         }
-        else
+
+        if (!ApiKeysMatch(providedApiKey.ToString(), authSettings.AgenteApiKey))
         {
-            requestsInCurrentWindow++;
+            Interlocked.Increment(ref authFailureCount);
+
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            var problemUnauthorized = new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Não autorizado.",
+                Detail = "Chave de API inválida.",
+                Instance = context.Request.Path
+            };
+            problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
+
+            securityLogger.LogWarning(
+                "Falha de autenticação por chave inválida em {Path}. TraceId={TraceId}",
+                context.Request.Path,
+                context.TraceIdentifier);
+
+            await context.Response.WriteAsJsonAsync(problemUnauthorized);
+            return;
         }
+
+        Interlocked.Increment(ref authSuccessCount);
+        rateLimitKey = BuildRateLimitKey(context, BuildApiKeyIdentifier(providedApiKey.ToString()));
     }
 
-    if (isRateLimited)
+    var now = DateTimeOffset.UtcNow;
+    if (!TryConsumeRateLimitToken(rateLimitKey, now, out var retryAfterSeconds))
     {
         Interlocked.Increment(ref rateLimitRejectionCount);
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        context.Response.Headers.RetryAfter =
-            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
 
         securityLogger.LogWarning(
-            "Requisição bloqueada por rate limiting em {Path}. RetryAfterSeconds={RetryAfterSeconds} TraceId={TraceId}",
+            "Requisição bloqueada por rate limiting em {Path}. RateLimitKey={RateLimitKey} RetryAfterSeconds={RetryAfterSeconds} TraceId={TraceId}",
             context.Request.Path,
-            Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)),
+            rateLimitKey,
+            retryAfterSeconds,
             context.TraceIdentifier);
 
         var rateProblem = new ProblemDetails
@@ -160,86 +220,6 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var authSettings = context.RequestServices.GetRequiredService<IOptions<AuthenticationSettings>>().Value;
-
-    if (app.Environment.IsDevelopment() && authSettings.AllowAnonymousInDevelopment)
-    {
-        Interlocked.Increment(ref authSuccessCount);
-        await next();
-        return;
-    }
-
-    if (string.IsNullOrWhiteSpace(authSettings.AgenteApiKey))
-    {
-        Interlocked.Increment(ref authConfigErrorCount);
-
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        var problemConfig = new ProblemDetails
-        {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = "Configuração de autenticação inválida.",
-            Detail = "A chave de API obrigatória não foi configurada.",
-            Instance = context.Request.Path
-        };
-        problemConfig.Extensions["traceId"] = context.TraceIdentifier;
-
-        securityLogger.LogError(
-            "Configuração inválida de autenticação no endpoint {Path}. TraceId={TraceId}",
-            context.Request.Path,
-            context.TraceIdentifier);
-
-        await context.Response.WriteAsJsonAsync(problemConfig);
-        return;
-    }
-
-    if (!context.Request.Headers.TryGetValue("X-Agente-Api-Key", out var providedApiKey) ||
-        string.IsNullOrWhiteSpace(providedApiKey))
-    {
-        Interlocked.Increment(ref authFailureCount);
-
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        var problemUnauthorized = new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = "Não autorizado.",
-            Detail = "Header X-Agente-Api-Key não informado.",
-            Instance = context.Request.Path
-        };
-        problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
-
-        securityLogger.LogWarning(
-            "Falha de autenticação por header ausente em {Path}. TraceId={TraceId}",
-            context.Request.Path,
-            context.TraceIdentifier);
-
-        await context.Response.WriteAsJsonAsync(problemUnauthorized);
-        return;
-    }
-
-    if (!ApiKeysMatch(providedApiKey.ToString(), authSettings.AgenteApiKey))
-    {
-        Interlocked.Increment(ref authFailureCount);
-
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        var problemUnauthorized = new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = "Não autorizado.",
-            Detail = "Chave de API inválida.",
-            Instance = context.Request.Path
-        };
-        problemUnauthorized.Extensions["traceId"] = context.TraceIdentifier;
-
-        securityLogger.LogWarning(
-            "Falha de autenticação por chave inválida em {Path}. TraceId={TraceId}",
-            context.Request.Path,
-            context.TraceIdentifier);
-
-        await context.Response.WriteAsJsonAsync(problemUnauthorized);
-        return;
-    }
-
-    Interlocked.Increment(ref authSuccessCount);
     await next();
 });
 
@@ -258,7 +238,37 @@ string BuildMetrics()
     AppendCounter(sb, "agente_auth_failures_total", "Total de falhas de autenticação no endpoint /api/agente.", Interlocked.Read(ref authFailureCount));
     AppendCounter(sb, "agente_auth_config_errors_total", "Total de erros de configuração de autenticação.", Interlocked.Read(ref authConfigErrorCount));
     AppendCounter(sb, "agente_rate_limit_rejections_total", "Total de rejeições por rate limiting no endpoint /api/agente.", Interlocked.Read(ref rateLimitRejectionCount));
+    AppendCounter(sb, "agente_justificativa_fallback_total", "Total de respostas com fallback de justificativa por indisponibilidade da IA.", AgenteInadimpleciaDeClientes.JustificativaFallbackCount);
     return sb.ToString();
+}
+
+bool TryConsumeRateLimitToken(string key, DateTimeOffset now, out int retryAfterSeconds)
+{
+    lock (rateLimitLock)
+    {
+        if (!rateLimitBuckets.TryGetValue(key, out var bucket))
+        {
+            bucket = new RateLimitBucket(now, 0);
+        }
+
+        var elapsed = now - bucket.WindowStart;
+        if (elapsed >= TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds))
+        {
+            bucket = new RateLimitBucket(now, 0);
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (bucket.RequestCount >= rateLimitSettings.PermitLimit)
+        {
+            retryAfterSeconds = Math.Max(1, (int)Math.Ceiling((TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed).TotalSeconds));
+            return false;
+        }
+
+        bucket = bucket with { RequestCount = bucket.RequestCount + 1 };
+        rateLimitBuckets[key] = bucket;
+        retryAfterSeconds = 0;
+        return true;
+    }
 }
 
 static void AppendCounter(StringBuilder sb, string name, string help, long value)
@@ -280,5 +290,29 @@ static bool ApiKeysMatch(string provided, string expected)
 
     return CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
 }
+
+static string BuildApiKeyIdentifier(string apiKey)
+{
+    var hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey));
+    return Convert.ToHexString(hash[..6]);
+}
+
+static string BuildRateLimitKey(HttpContext context, string apiKeyIdentifier)
+{
+    var clientId = context.Request.Headers["X-Agente-Client-Id"].ToString().Trim();
+    if (!string.IsNullOrWhiteSpace(clientId))
+    {
+        if (clientId.Length > 64)
+        {
+            clientId = clientId[..64];
+        }
+
+        return $"cliente:{clientId}";
+    }
+
+    return $"apikey:{apiKeyIdentifier}";
+}
+
+public readonly record struct RateLimitBucket(DateTimeOffset WindowStart, int RequestCount);
 
 public partial class Program;

@@ -43,6 +43,12 @@ A decisão final é calculada em código e **não depende da IA**:
 
 A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão.
 
+### Resiliência de justificativa (Fase 6)
+
+Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a decisão determinística e retorna justificativa fallback:
+
+`Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.`
+
 ### Autenticação do endpoint
 
 `POST /api/agente` exige o header `X-Agente-Api-Key`.
@@ -59,6 +65,11 @@ A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão
 
 Quando o limite é excedido, a API retorna `429 Too Many Requests`.
 
+A limitação é segmentada por chave derivada:
+
+- `X-Agente-Client-Id` (quando informado);
+- identificador seguro derivado da API key (quando `X-Agente-Client-Id` não é enviado).
+
 ### Observabilidade
 
 A API registra eventos de segurança com `traceId` para:
@@ -68,17 +79,21 @@ A API registra eventos de segurança com `traceId` para:
 - rejeição por rate limiting;
 - erro de configuração de autenticação.
 
+Também registra warnings quando ocorre fallback de justificativa por indisponibilidade da IA.
+
 O endpoint `GET /metrics` expõe métricas no formato Prometheus:
 
 - `agente_auth_success_total`
 - `agente_auth_failures_total`
 - `agente_auth_config_errors_total`
 - `agente_rate_limit_rejections_total`
+- `agente_justificativa_fallback_total`
 
 Exemplo de consultas:
 
 - `agente_auth_failures_total`
 - `agente_rate_limit_rejections_total`
+- `agente_justificativa_fallback_total`
 
 Exemplo de payload:
 
@@ -112,11 +127,13 @@ Cobertura inicial incluída:
 - decisão determinística do agente para manter assinatura (`< 60`);
 - decisão determinística do agente para suspender assinatura (`60-120`);
 - decisão determinística do agente para cancelar assinatura (`> 120`);
+- fallback de justificativa quando IA falha;
 - `GET /health` com retorno de sucesso;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`).
+- `POST /api/agente` sem API key (retorno `401`);
+- segmentação de rate limit por `X-Agente-Client-Id`.
 
 ## CI (GitHub Actions)
 
@@ -165,6 +182,13 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - decisão final movida para regras determinísticas no código;
 - IA utilizada apenas para justificativa da decisão;
 - ampliação de testes unitários para cobrir faixas de atraso críticas.
+
+### Fase 6
+
+- fallback de justificativa para indisponibilidade da IA sem quebrar resposta de decisão;
+- métrica `agente_justificativa_fallback_total` para observabilidade de fallback;
+- rate limiting segmentado por cliente (`X-Agente-Client-Id`) ou identificador derivado da API key;
+- testes cobrindo fallback e segmentação de rate limit por cliente.
 
 ## Ação obrigatória pós-hardening
 
