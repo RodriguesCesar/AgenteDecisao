@@ -7,4 +7,8 @@ public sealed class AgenteRateLimitingSettings
     public int PermitLimit { get; set; } = 10;
 
     public int WindowSeconds { get; set; } = 60;
+
+    public int MaxBuckets { get; set; } = 1000;
+
+    public int CleanupBatchSize { get; set; } = 200;
 }

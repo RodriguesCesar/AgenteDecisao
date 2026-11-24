@@ -37,9 +37,9 @@ var rateLimitSettings = builder.Configuration
     .GetSection(AgenteRateLimitingSettings.SectionName)
     .Get<AgenteRateLimitingSettings>() ?? new AgenteRateLimitingSettings();
 
-if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1)
+if (rateLimitSettings.PermitLimit < 1 || rateLimitSettings.WindowSeconds < 1 || rateLimitSettings.MaxBuckets < 1 || rateLimitSettings.CleanupBatchSize < 1)
 {
-    throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit e WindowSeconds.");
+    throw new InvalidOperationException("Configuração inválida em RateLimiting:Agente. Verifique PermitLimit, WindowSeconds, MaxBuckets e CleanupBatchSize.");
 }
 
 var rateLimitBuckets = new Dictionary<string, RateLimitBucket>(StringComparer.Ordinal);
@@ -49,6 +49,7 @@ long authSuccessCount = 0;
 long authFailureCount = 0;
 long authConfigErrorCount = 0;
 long rateLimitRejectionCount = 0;
+long rateLimitCapacityRejectionCount = 0;
 
 builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, client) =>
 {
@@ -194,16 +195,28 @@ app.Use(async (context, next) =>
     }
 
     var now = DateTimeOffset.UtcNow;
-    if (!TryConsumeRateLimitToken(rateLimitKey, now, out var retryAfterSeconds))
+    var rateLimitDecision = TryConsumeRateLimitToken(rateLimitKey, now, out var retryAfterSeconds);
+    if (rateLimitDecision is not RateLimitDecision.Allowed)
     {
         Interlocked.Increment(ref rateLimitRejectionCount);
+
+        if (rateLimitDecision is RateLimitDecision.CapacityExceeded)
+        {
+            Interlocked.Increment(ref rateLimitCapacityRejectionCount);
+        }
+
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
 
+        var detail = rateLimitDecision is RateLimitDecision.CapacityExceeded
+            ? "Capacidade de controle de rate limiting excedida temporariamente. Tente novamente em alguns instantes."
+            : "Tente novamente em alguns instantes.";
+
         securityLogger.LogWarning(
-            "Requisição bloqueada por rate limiting em {Path}. RateLimitKey={RateLimitKey} RetryAfterSeconds={RetryAfterSeconds} TraceId={TraceId}",
+            "Requisição bloqueada por rate limiting em {Path}. RateLimitKey={RateLimitKey} Motivo={Motivo} RetryAfterSeconds={RetryAfterSeconds} TraceId={TraceId}",
             context.Request.Path,
             rateLimitKey,
+            rateLimitDecision,
             retryAfterSeconds,
             context.TraceIdentifier);
 
@@ -211,7 +224,7 @@ app.Use(async (context, next) =>
         {
             Status = StatusCodes.Status429TooManyRequests,
             Title = "Limite de requisições excedido.",
-            Detail = "Tente novamente em alguns instantes.",
+            Detail = detail,
             Instance = context.Request.Path
         };
         rateProblem.Extensions["traceId"] = context.TraceIdentifier;
@@ -238,16 +251,25 @@ string BuildMetrics()
     AppendCounter(sb, "agente_auth_failures_total", "Total de falhas de autenticação no endpoint /api/agente.", Interlocked.Read(ref authFailureCount));
     AppendCounter(sb, "agente_auth_config_errors_total", "Total de erros de configuração de autenticação.", Interlocked.Read(ref authConfigErrorCount));
     AppendCounter(sb, "agente_rate_limit_rejections_total", "Total de rejeições por rate limiting no endpoint /api/agente.", Interlocked.Read(ref rateLimitRejectionCount));
+    AppendCounter(sb, "agente_rate_limit_capacity_rejections_total", "Total de rejeições por limite de capacidade de buckets do rate limiting.", Interlocked.Read(ref rateLimitCapacityRejectionCount));
     AppendCounter(sb, "agente_justificativa_fallback_total", "Total de respostas com fallback de justificativa por indisponibilidade da IA.", AgenteInadimpleciaDeClientes.JustificativaFallbackCount);
     return sb.ToString();
 }
 
-bool TryConsumeRateLimitToken(string key, DateTimeOffset now, out int retryAfterSeconds)
+RateLimitDecision TryConsumeRateLimitToken(string key, DateTimeOffset now, out int retryAfterSeconds)
 {
     lock (rateLimitLock)
     {
+        CleanupExpiredBuckets(now);
+
         if (!rateLimitBuckets.TryGetValue(key, out var bucket))
         {
+            if (rateLimitBuckets.Count >= rateLimitSettings.MaxBuckets)
+            {
+                retryAfterSeconds = Math.Max(1, rateLimitSettings.WindowSeconds);
+                return RateLimitDecision.CapacityExceeded;
+            }
+
             bucket = new RateLimitBucket(now, 0);
         }
 
@@ -261,13 +283,36 @@ bool TryConsumeRateLimitToken(string key, DateTimeOffset now, out int retryAfter
         if (bucket.RequestCount >= rateLimitSettings.PermitLimit)
         {
             retryAfterSeconds = Math.Max(1, (int)Math.Ceiling((TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds) - elapsed).TotalSeconds));
-            return false;
+            return RateLimitDecision.WindowLimitExceeded;
         }
 
         bucket = bucket with { RequestCount = bucket.RequestCount + 1 };
         rateLimitBuckets[key] = bucket;
         retryAfterSeconds = 0;
-        return true;
+        return RateLimitDecision.Allowed;
+    }
+}
+
+void CleanupExpiredBuckets(DateTimeOffset now)
+{
+    var cutoff = TimeSpan.FromSeconds(rateLimitSettings.WindowSeconds);
+    var keysToRemove = new List<string>(rateLimitSettings.CleanupBatchSize);
+
+    foreach (var pair in rateLimitBuckets)
+    {
+        if (now - pair.Value.WindowStart >= cutoff)
+        {
+            keysToRemove.Add(pair.Key);
+            if (keysToRemove.Count >= rateLimitSettings.CleanupBatchSize)
+            {
+                break;
+            }
+        }
+    }
+
+    foreach (var key in keysToRemove)
+    {
+        rateLimitBuckets.Remove(key);
     }
 }
 
@@ -314,5 +359,12 @@ static string BuildRateLimitKey(HttpContext context, string apiKeyIdentifier)
 }
 
 public readonly record struct RateLimitBucket(DateTimeOffset WindowStart, int RequestCount);
+
+public enum RateLimitDecision
+{
+    Allowed,
+    WindowLimitExceeded,
+    CapacityExceeded
+}
 
 public partial class Program;
