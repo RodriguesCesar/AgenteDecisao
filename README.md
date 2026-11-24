@@ -62,6 +62,8 @@ Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a d
 
 - `RateLimiting:Agente:PermitLimit`
 - `RateLimiting:Agente:WindowSeconds`
+- `RateLimiting:Agente:MaxBuckets`
+- `RateLimiting:Agente:CleanupBatchSize`
 
 Quando o limite é excedido, a API retorna `429 Too Many Requests`.
 
@@ -69,6 +71,8 @@ A limitação é segmentada por chave derivada:
 
 - `X-Agente-Client-Id` (quando informado);
 - identificador seguro derivado da API key (quando `X-Agente-Client-Id` não é enviado).
+
+A API também protege a capacidade interna de controle de buckets para evitar crescimento ilimitado em memória.
 
 ### Observabilidade
 
@@ -87,12 +91,14 @@ O endpoint `GET /metrics` expõe métricas no formato Prometheus:
 - `agente_auth_failures_total`
 - `agente_auth_config_errors_total`
 - `agente_rate_limit_rejections_total`
+- `agente_rate_limit_capacity_rejections_total`
 - `agente_justificativa_fallback_total`
 
 Exemplo de consultas:
 
 - `agente_auth_failures_total`
 - `agente_rate_limit_rejections_total`
+- `agente_rate_limit_capacity_rejections_total`
 - `agente_justificativa_fallback_total`
 
 Exemplo de payload:
@@ -132,7 +138,8 @@ Cobertura inicial incluída:
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`).
+- `POST /api/agente` sem API key (retorno `401`);
+- `POST /api/agente` com capacidade de buckets excedida (retorno `429`).
 
 ## CI (GitHub Actions)
 
@@ -192,6 +199,13 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 
 - remediação da vulnerabilidade transitiva do `Microsoft.OpenApi` com pin explícito para `2.12.0`;
 - eliminação do warning `NU1903` no restore/build/test.
+
+### Fase 8
+
+- proteção de capacidade do rate limiting com limite máximo de buckets em memória;
+- limpeza incremental de buckets expirados para reduzir crescimento de estado;
+- nova métrica `agente_rate_limit_capacity_rejections_total`;
+- testes de integração cobrindo rejeição por capacidade de buckets (`429`).
 
 ## Ação obrigatória pós-hardening
 
