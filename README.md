@@ -138,8 +138,7 @@ Cobertura inicial incluída:
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`);
-- `POST /api/agente` com capacidade de buckets excedida (retorno `429`).
+- `POST /api/agente` sem API key (retorno `401`).
 
 ## CI (GitHub Actions)
 
@@ -204,8 +203,7 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 
 - proteção de capacidade do rate limiting com limite máximo de buckets em memória;
 - limpeza incremental de buckets expirados para reduzir crescimento de estado;
-- nova métrica `agente_rate_limit_capacity_rejections_total`;
-- testes de integração cobrindo rejeição por capacidade de buckets (`429`).
+- nova métrica `agente_rate_limit_capacity_rejections_total`.
 
 ## Ação obrigatória pós-hardening
 
