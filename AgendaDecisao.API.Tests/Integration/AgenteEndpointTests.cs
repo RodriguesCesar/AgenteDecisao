@@ -1,4 +1,5 @@
 using AgenteDecisao.API.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
 using System.Net.Http.Json;
@@ -59,6 +60,31 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
         Assert.Equal("Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.", resultado.Justificativa);
 
         _factory.FakeServico.ExceptionToThrow = null;
+    }
+
+    [Fact]
+    public async Task PostAgente_ComClientIdInvalido_DeveRetornarBadRequest()
+    {
+        var payload = new
+        {
+            entradaUsuario = "Cliente com atraso relevante",
+            cliente = new { nome = "Cliente Teste", diasInadimplente = 80 },
+            assinatura = new { status = "ATIVA" }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agente")
+        {
+            Content = JsonContent.Create(payload)
+        };
+        request.Headers.Add("X-Agente-Api-Key", TestWebApplicationFactory.TestApiKey);
+        request.Headers.Add("X-Agente-Client-Id", "cliente com espaco");
+
+        var response = await _httpClient.SendAsync(request);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(problem);
+        Assert.Equal("Header inválido.", problem!.Title);
     }
 
     [Fact]

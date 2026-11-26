@@ -72,6 +72,13 @@ A limitação é segmentada por chave derivada:
 - `X-Agente-Client-Id` (quando informado);
 - identificador seguro derivado da API key (quando `X-Agente-Client-Id` não é enviado).
 
+Quando enviado, `X-Agente-Client-Id` deve seguir o formato:
+
+- até 64 caracteres;
+- apenas letras, números, ponto (`.`), hífen (`-`) ou underscore (`_`).
+
+Se o formato for inválido, a API retorna `400 Bad Request`.
+
 A API também protege a capacidade interna de controle de buckets para evitar crescimento ilimitado em memória.
 
 ### Observabilidade
@@ -81,7 +88,8 @@ A API registra eventos de segurança com `traceId` para:
 - falha de autenticação por ausência de header;
 - falha de autenticação por chave inválida;
 - rejeição por rate limiting;
-- erro de configuração de autenticação.
+- erro de configuração de autenticação;
+- rejeição por `X-Agente-Client-Id` inválido.
 
 Também registra warnings quando ocorre fallback de justificativa por indisponibilidade da IA.
 
@@ -92,6 +100,7 @@ O endpoint `GET /metrics` expõe métricas no formato Prometheus:
 - `agente_auth_config_errors_total`
 - `agente_rate_limit_rejections_total`
 - `agente_rate_limit_capacity_rejections_total`
+- `agente_rate_limit_invalid_client_id_total`
 - `agente_justificativa_fallback_total`
 
 Exemplo de consultas:
@@ -99,6 +108,7 @@ Exemplo de consultas:
 - `agente_auth_failures_total`
 - `agente_rate_limit_rejections_total`
 - `agente_rate_limit_capacity_rejections_total`
+- `agente_rate_limit_invalid_client_id_total`
 - `agente_justificativa_fallback_total`
 
 Exemplo de payload:
@@ -138,7 +148,8 @@ Cobertura inicial incluída:
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
-- `POST /api/agente` sem API key (retorno `401`).
+- `POST /api/agente` sem API key (retorno `401`);
+- `POST /api/agente` com `X-Agente-Client-Id` inválido (retorno `400`).
 
 ## CI (GitHub Actions)
 
@@ -204,6 +215,12 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - proteção de capacidade do rate limiting com limite máximo de buckets em memória;
 - limpeza incremental de buckets expirados para reduzir crescimento de estado;
 - nova métrica `agente_rate_limit_capacity_rejections_total`.
+
+### Fase 9
+
+- validação explícita e segura do header `X-Agente-Client-Id`;
+- rejeição `400` para formato inválido;
+- nova métrica `agente_rate_limit_invalid_client_id_total`.
 
 ## Ação obrigatória pós-hardening
 
