@@ -50,6 +50,7 @@ long authFailureCount = 0;
 long authConfigErrorCount = 0;
 long rateLimitRejectionCount = 0;
 long rateLimitCapacityRejectionCount = 0;
+long rateLimitInvalidClientIdCount = 0;
 
 builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, client) =>
 {
@@ -116,7 +117,14 @@ app.Use(async (context, next) =>
     if (app.Environment.IsDevelopment() && authSettings.AllowAnonymousInDevelopment)
     {
         Interlocked.Increment(ref authSuccessCount);
-        rateLimitKey = BuildRateLimitKey(context, "development-bypass");
+        rateLimitKey = BuildRateLimitKey(context, "development-bypass", out var invalidClientId);
+
+        if (invalidClientId)
+        {
+            Interlocked.Increment(ref rateLimitInvalidClientIdCount);
+            await WriteInvalidClientIdProblemAsync(context, securityLogger);
+            return;
+        }
     }
     else
     {
@@ -191,7 +199,14 @@ app.Use(async (context, next) =>
         }
 
         Interlocked.Increment(ref authSuccessCount);
-        rateLimitKey = BuildRateLimitKey(context, BuildApiKeyIdentifier(providedApiKey.ToString()));
+        rateLimitKey = BuildRateLimitKey(context, BuildApiKeyIdentifier(providedApiKey.ToString()), out var invalidClientId);
+
+        if (invalidClientId)
+        {
+            Interlocked.Increment(ref rateLimitInvalidClientIdCount);
+            await WriteInvalidClientIdProblemAsync(context, securityLogger);
+            return;
+        }
     }
 
     var now = DateTimeOffset.UtcNow;
@@ -252,6 +267,7 @@ string BuildMetrics()
     AppendCounter(sb, "agente_auth_config_errors_total", "Total de erros de configuração de autenticação.", Interlocked.Read(ref authConfigErrorCount));
     AppendCounter(sb, "agente_rate_limit_rejections_total", "Total de rejeições por rate limiting no endpoint /api/agente.", Interlocked.Read(ref rateLimitRejectionCount));
     AppendCounter(sb, "agente_rate_limit_capacity_rejections_total", "Total de rejeições por limite de capacidade de buckets do rate limiting.", Interlocked.Read(ref rateLimitCapacityRejectionCount));
+    AppendCounter(sb, "agente_rate_limit_invalid_client_id_total", "Total de requisições rejeitadas por X-Agente-Client-Id inválido.", Interlocked.Read(ref rateLimitInvalidClientIdCount));
     AppendCounter(sb, "agente_justificativa_fallback_total", "Total de respostas com fallback de justificativa por indisponibilidade da IA.", AgenteInadimpleciaDeClientes.JustificativaFallbackCount);
     return sb.ToString();
 }
@@ -316,6 +332,27 @@ void CleanupExpiredBuckets(DateTimeOffset now)
     }
 }
 
+async Task WriteInvalidClientIdProblemAsync(HttpContext context, ILogger logger)
+{
+    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+
+    var problem = new ProblemDetails
+    {
+        Status = StatusCodes.Status400BadRequest,
+        Title = "Header inválido.",
+        Detail = "O header X-Agente-Client-Id deve conter apenas letras, números, ponto, hífen ou underscore, com até 64 caracteres.",
+        Instance = context.Request.Path
+    };
+    problem.Extensions["traceId"] = context.TraceIdentifier;
+
+    logger.LogWarning(
+        "Requisição rejeitada por X-Agente-Client-Id inválido em {Path}. TraceId={TraceId}",
+        context.Request.Path,
+        context.TraceIdentifier);
+
+    await context.Response.WriteAsJsonAsync(problem);
+}
+
 static void AppendCounter(StringBuilder sb, string name, string help, long value)
 {
     sb.Append("# HELP ").Append(name).Append(' ').Append(help).AppendLine();
@@ -342,20 +379,41 @@ static string BuildApiKeyIdentifier(string apiKey)
     return Convert.ToHexString(hash[..6]);
 }
 
-static string BuildRateLimitKey(HttpContext context, string apiKeyIdentifier)
+static string BuildRateLimitKey(HttpContext context, string apiKeyIdentifier, out bool invalidClientId)
 {
+    invalidClientId = false;
+
     var clientId = context.Request.Headers["X-Agente-Client-Id"].ToString().Trim();
     if (!string.IsNullOrWhiteSpace(clientId))
     {
-        if (clientId.Length > 64)
+        if (!IsValidClientId(clientId))
         {
-            clientId = clientId[..64];
+            invalidClientId = true;
+            return string.Empty;
         }
 
         return $"cliente:{clientId}";
     }
 
     return $"apikey:{apiKeyIdentifier}";
+}
+
+static bool IsValidClientId(string value)
+{
+    if (value.Length > 64)
+    {
+        return false;
+    }
+
+    foreach (var ch in value)
+    {
+        if (!(char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_'))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 public readonly record struct RateLimitBucket(DateTimeOffset WindowStart, int RequestCount);
