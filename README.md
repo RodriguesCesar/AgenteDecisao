@@ -43,6 +43,13 @@ A decisão final é calculada em código e **não depende da IA**:
 
 A IA passa a ser usada apenas para gerar a **justificativa textual** da decisão.
 
+### Configuração de OpenAI
+
+Além da `ApiKey`, a API permite configurar:
+
+- `OpenAI:Model` (padrão: `gpt-4o`);
+- `OpenAI:TimeoutSeconds` (de 5 a 120, padrão: 30).
+
 ### Resiliência de justificativa
 
 Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a decisão determinística e retorna justificativa fallback:
@@ -156,6 +163,7 @@ Cobertura inicial incluída:
 - decisão determinística do agente para cancelar assinatura (`> 120`);
 - fallback de justificativa quando IA falha;
 - limite de 240 caracteres para justificativa retornada pela IA;
+- uso do model configurado em `OpenAI:Model` na requisição para OpenAI;
 - `GET /health` com retorno de sucesso;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
@@ -245,6 +253,13 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 
 - normalização de justificativa da IA com limite técnico de 240 caracteres;
 - teste unitário cobrindo justificativa acima do limite.
+
+### Fase 12
+
+- configuração explícita de `OpenAI:Model` e `OpenAI:TimeoutSeconds` com validação no startup;
+- aplicação do model configurado na requisição para OpenAI;
+- timeout do `HttpClient` alinhado com configuração;
+- teste unitário para garantir uso do model configurado.
 
 ## Ação obrigatória pós-hardening
 

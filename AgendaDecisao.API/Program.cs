@@ -24,6 +24,8 @@ builder.Services
     .AddOptions<OpenAISettings>()
     .Bind(builder.Configuration.GetSection(OpenAISettings.SectionName))
     .Validate(settings => !string.IsNullOrWhiteSpace(settings.ApiKey), "OpenAI:ApiKey precisa ser configurada.")
+    .Validate(settings => !string.IsNullOrWhiteSpace(settings.Model), "OpenAI:Model precisa ser configurado.")
+    .Validate(settings => settings.TimeoutSeconds is >= 5 and <= 120, "OpenAI:TimeoutSeconds deve estar entre 5 e 120 segundos.")
     .ValidateOnStart();
 
 builder.Services
@@ -56,7 +58,7 @@ builder.Services.AddHttpClient<IServicoIA, ServicoOpenIA>((serviceProvider, clie
 {
     var settings = serviceProvider.GetRequiredService<IOptions<OpenAISettings>>().Value;
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
 });
 
 builder.Services.AddScoped<IFerramentaAgente, FerramentaSuspender>();

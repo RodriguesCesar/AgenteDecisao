@@ -1,9 +1,11 @@
 using AgenteDecisao.API.Services.Interfaces;
+using AgenteDecisao.API.Settings;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace AgenteDecisao.API.Services;
 
-public class ServicoOpenIA(HttpClient httpClient) : IServicoIA
+public class ServicoOpenIA(HttpClient httpClient, IOptions<OpenAISettings> openAISettings) : IServicoIA
 {
     public async Task<string> ExecutarAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -14,7 +16,7 @@ public class ServicoOpenIA(HttpClient httpClient) : IServicoIA
 
         var requisicao = new
         {
-            model = "gpt-4o",
+            model = openAISettings.Value.Model,
             messages = new[]
             {
                 new { role = "user", content = prompt }
