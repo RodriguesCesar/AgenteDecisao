@@ -88,6 +88,21 @@ public class AgenteEndpointTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task PostAgente_ComEntradaUsuarioAcimaDoLimite_DeveRetornarBadRequest()
+    {
+        var payload = new
+        {
+            entradaUsuario = new string('a', 1001),
+            cliente = new { nome = "Cliente Teste", diasInadimplente = 80 },
+            assinatura = new { status = "ATIVA" }
+        };
+
+        var response = await _httpClient.PostAsJsonAsync("/api/agente", payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task PostAgente_ComPayloadInvalido_DeveRetornarBadRequest()
     {
         var payload = new

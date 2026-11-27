@@ -12,7 +12,7 @@ namespace AgenteDecisao.API.Models;
 public class ContextoDecisao
 {
     [Required]
-    [MinLength(3)]
+    [StringLength(1000, MinimumLength = 3)]
     public string EntradaUsuario { get; set; } = string.Empty;
 
     [Required]

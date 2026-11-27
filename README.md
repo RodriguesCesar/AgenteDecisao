@@ -56,6 +56,15 @@ Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a d
 - Em `Development`, o bypass pode ser habilitado com `Authentication:AllowAnonymousInDevelopment=true`.
 - Em outros ambientes, mantenha `AllowAnonymousInDevelopment=false` e configure `Authentication:AgenteApiKey`.
 
+### Validação de entrada
+
+O campo `entradaUsuario` no payload possui limite de tamanho:
+
+- mínimo de 3 caracteres;
+- máximo de 1000 caracteres.
+
+Payload fora desse limite retorna `400 Bad Request`.
+
 ### Rate limiting
 
 `POST /api/agente` possui limitação configurável em janela fixa:
@@ -149,7 +158,8 @@ Cobertura inicial incluída:
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
 - `POST /api/agente` sem API key (retorno `401`);
-- `POST /api/agente` com `X-Agente-Client-Id` inválido (retorno `400`).
+- `POST /api/agente` com `X-Agente-Client-Id` inválido (retorno `400`);
+- `POST /api/agente` com `entradaUsuario` acima do limite (retorno `400`).
 
 ## CI (GitHub Actions)
 
@@ -221,6 +231,12 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - validação explícita e segura do header `X-Agente-Client-Id`;
 - rejeição `400` para formato inválido;
 - nova métrica `agente_rate_limit_invalid_client_id_total`.
+
+### Fase 10
+
+- limite máximo de tamanho para `entradaUsuario` (1000 caracteres);
+- rejeição `400` para payload com `entradaUsuario` acima do limite;
+- teste de integração cobrindo o cenário de payload excedendo limite.
 
 ## Ação obrigatória pós-hardening
 
