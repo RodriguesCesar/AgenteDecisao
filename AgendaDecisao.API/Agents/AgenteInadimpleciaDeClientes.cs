@@ -14,6 +14,7 @@ public class AgenteInadimpleciaDeClientes(
     IHttpContextAccessor httpContextAccessor)
 {
     private const string JustificativaFallback = "Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.";
+    private const int JustificativaMaxLength = 240;
     private static long _justificativaFallbackCount;
 
     public static long JustificativaFallbackCount => Interlocked.Read(ref _justificativaFallbackCount);
@@ -88,7 +89,7 @@ public class AgenteInadimpleciaDeClientes(
                 throw new InvalidOperationException("A IA não retornou justificativa válida para a decisão.");
             }
 
-            return justificativa.Trim();
+            return NormalizarJustificativa(justificativa);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -102,6 +103,17 @@ public class AgenteInadimpleciaDeClientes(
 
             return JustificativaFallback;
         }
+    }
+
+    private static string NormalizarJustificativa(string texto)
+    {
+        var normalizado = texto.Trim();
+        if (normalizado.Length <= JustificativaMaxLength)
+        {
+            return normalizado;
+        }
+
+        return normalizado[..JustificativaMaxLength];
     }
 
     private async Task ExecutarFerramenta(string decisao, ContextoDecisao contexto)
