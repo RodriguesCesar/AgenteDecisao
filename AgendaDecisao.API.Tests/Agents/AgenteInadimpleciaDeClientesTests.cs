@@ -62,6 +62,19 @@ public class AgenteInadimpleciaDeClientesTests
         Assert.Equal("Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.", resultado.Justificativa);
     }
 
+    [Fact]
+    public async Task ExecutarAsync_QuandoIARetornaJustificativaLonga_DeveLimitarPara240Caracteres()
+    {
+        var justificativaLonga = new string('x', 300);
+        var agente = CriarAgente(justificativaLonga);
+        var contexto = CriarContexto(80, "ATIVA");
+
+        var resultado = await agente.ExecutarAsync(contexto);
+
+        Assert.NotNull(resultado.Justificativa);
+        Assert.Equal(240, resultado.Justificativa!.Length);
+    }
+
     private static AgenteInadimpleciaDeClientes CriarAgente(string response = "Justificativa padrão", Exception? exceptionToThrow = null)
     {
         var servicoIA = new ServicoIAFake(response, exceptionToThrow);

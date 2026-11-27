@@ -49,6 +49,8 @@ Se a IA ficar indisponível (erro, timeout ou resposta vazia), a API mantém a d
 
 `Decisão aplicada por regra de inadimplência; justificativa automática indisponível no momento.`
 
+Quando a IA retorna justificativa acima do limite esperado, a API normaliza o texto e mantém apenas os primeiros 240 caracteres.
+
 ### Autenticação do endpoint
 
 `POST /api/agente` exige o header `X-Agente-Api-Key`.
@@ -153,6 +155,7 @@ Cobertura inicial incluída:
 - decisão determinística do agente para suspender assinatura (`60-120`);
 - decisão determinística do agente para cancelar assinatura (`> 120`);
 - fallback de justificativa quando IA falha;
+- limite de 240 caracteres para justificativa retornada pela IA;
 - `GET /health` com retorno de sucesso;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
@@ -237,6 +240,11 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - limite máximo de tamanho para `entradaUsuario` (1000 caracteres);
 - rejeição `400` para payload com `entradaUsuario` acima do limite;
 - teste de integração cobrindo o cenário de payload excedendo limite.
+
+### Fase 11
+
+- normalização de justificativa da IA com limite técnico de 240 caracteres;
+- teste unitário cobrindo justificativa acima do limite.
 
 ## Ação obrigatória pós-hardening
 
