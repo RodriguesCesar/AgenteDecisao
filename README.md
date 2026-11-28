@@ -30,6 +30,8 @@ dotnet run --project AgendaDecisao.API/AgenteDecisao.API.csproj
 ## Endpoints
 
 - `GET /health`
+- `GET /health/live`
+- `GET /health/ready`
 - `GET /metrics`
 - `POST /api/agente`
 
@@ -99,6 +101,13 @@ Se o formato for inválido, a API retorna `400 Bad Request`.
 
 A API também protege a capacidade interna de controle de buckets para evitar crescimento ilimitado em memória.
 
+### Health checks operacionais
+
+A API expõe probes dedicados para operação:
+
+- `GET /health/live`: liveness probe;
+- `GET /health/ready`: readiness probe.
+
 ### Observabilidade
 
 A API registra eventos de segurança com `traceId` para:
@@ -164,7 +173,7 @@ Cobertura inicial incluída:
 - fallback de justificativa quando IA falha;
 - limite de 240 caracteres para justificativa retornada pela IA;
 - uso do model configurado em `OpenAI:Model` na requisição para OpenAI;
-- `GET /health` com retorno de sucesso;
+- `GET /health`, `GET /health/live` e `GET /health/ready` com retorno de sucesso;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
@@ -260,6 +269,12 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - aplicação do model configurado na requisição para OpenAI;
 - timeout do `HttpClient` alinhado com configuração;
 - teste unitário para garantir uso do model configurado.
+
+### Fase 13
+
+- criação de probes operacionais `GET /health/live` e `GET /health/ready`;
+- atualização dos exemplos `.http` para consumir os novos endpoints;
+- testes de integração para `live` e `ready`.
 
 ## Ação obrigatória pós-hardening
 

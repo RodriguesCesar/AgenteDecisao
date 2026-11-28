@@ -256,6 +256,8 @@ app.Use(async (context, next) =>
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready");
 app.MapGet("/metrics", () => Results.Text(BuildMetrics(), "text/plain; version=0.0.4; charset=utf-8"));
 app.MapControllers();
 

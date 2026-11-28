@@ -21,4 +21,20 @@ public class HealthEndpointTests : IClassFixture<TestWebApplicationFactory>
 
         Assert.True(response.IsSuccessStatusCode);
     }
+
+    [Fact]
+    public async Task GetHealthLive_DeveRetornarOk()
+    {
+        var response = await _httpClient.GetAsync("/health/live");
+
+        Assert.True(response.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task GetHealthReady_DeveRetornarOk()
+    {
+        var response = await _httpClient.GetAsync("/health/ready");
+
+        Assert.True(response.IsSuccessStatusCode);
+    }
 }

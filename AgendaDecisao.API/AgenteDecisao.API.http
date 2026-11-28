@@ -7,6 +7,16 @@ Accept: application/json
 
 ###
 
+GET {{AgenteDecisao.API_HostAddress}}/health/live
+Accept: application/json
+
+###
+
+GET {{AgenteDecisao.API_HostAddress}}/health/ready
+Accept: application/json
+
+###
+
 GET {{AgenteDecisao.API_HostAddress}}/metrics
 Accept: text/plain
 
