@@ -108,6 +108,15 @@ A API expõe probes dedicados para operação:
 - `GET /health/live`: liveness probe;
 - `GET /health/ready`: readiness probe.
 
+### Headers HTTP de segurança
+
+A API adiciona headers de segurança em todas as respostas:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+
 ### Observabilidade
 
 A API registra eventos de segurança com `traceId` para:
@@ -174,6 +183,7 @@ Cobertura inicial incluída:
 - limite de 240 caracteres para justificativa retornada pela IA;
 - uso do model configurado em `OpenAI:Model` na requisição para OpenAI;
 - `GET /health`, `GET /health/live` e `GET /health/ready` com retorno de sucesso;
+- validação de headers HTTP de segurança nos endpoints;
 - `GET /metrics` com validação dos contadores;
 - `POST /api/agente` com payload válido;
 - `POST /api/agente` com payload inválido (retorno `400`);
@@ -275,6 +285,11 @@ Pipeline em `.github/workflows/ci.yml` executa em push/pull request:
 - criação de probes operacionais `GET /health/live` e `GET /health/ready`;
 - atualização dos exemplos `.http` para consumir os novos endpoints;
 - testes de integração para `live` e `ready`.
+
+### Fase 14
+
+- adição de middleware com headers HTTP de segurança em todas as respostas;
+- inclusão de teste de integração para validar presença e valores dos headers.
 
 ## Ação obrigatória pós-hardening
 
